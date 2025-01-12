@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WireGuard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+        integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        .toggle-switch {
+            width: 48px;
+            height: 24px;
+            background-color: #4a4a4a;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .toggle-switch.active {
+            background-color: #ca8a04;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            width: 20px;
+            height: 20px;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(24px);
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 50;
+        }
+
+        .toast {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+            background-color: #1f2937;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-width: 300px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .toast.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .toast.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body class="min-h-screen text-gray-200 bg-neutral-800">
+    
+    <div id="toast-container" class="toast-container"></div>
+    
+    <div id="login-view" class="container mx-auto p-8 max-w-md">
+        <div class="flex items-center mb-12">
+            <i class="fa-solid fa-plane text-yellow-600 text-4xl mr-4"></i>
+            <h1 class="text-2xl">TCP Tunnel with a web ui</h1>
+        </div>
+
+        <div class="bg-neutral-700 rounded-lg p-6 shadow-lg">
+            <div class="flex justify-center mb-6">
+                <div class="w-16 h-16 bg-yellow-700 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-shield text-3xl text-white"></i>
+                </div>
+            </div>
+            <input type="password" placeholder="Password" id="password-input"
+                class="w-full bg-neutral-700 rounded px-4 py-2 mb-4 border-2 border-neutral-800 outline-none rounded-lg">
+            <button id="login-btn"
+                class="w-full bg-neutral-800 hover:bg-neutral-600 rounded py-2 transition ease-in">Sign in</button>
+        </div>
+    </div>
+
+    
+    <div id="main-view" class="container mx-auto p-8 hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div class="flex items-center mb-12">
+                <i class="fa-solid fa-plane text-yellow-600 text-4xl mr-4"></i>
+                <h1 class="text-2xl">TCP Tunnel with a web ui</h1>
+            </div>
+            <button id="logout-btn" class="text-gray-400 hover:text-gray-200">Sign out</button>
+        </div>
+
+        <div class="bg-neutral-700 rounded-lg shadow-lg">
+            <div class="p-4 border-b border-neutral-500">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl">Backends</h2>
+                    <div class="flex space-x-4">
+                        <button class="flex items-center text-gray-300 hover:text-white" id="new-backend-btn">
+                            <svg class="w-5 h-5 mr-1" viewBox="0 0 24 24">
+                                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                            </svg>
+                            New backend
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="backends-container" class="p-4 space-y-4">
+                
+            </div>
+        </div>
+    </div>
+
+    
+    <div id="create-backend-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-neutral-700 rounded-lg p-6 w-96">
+            <h2 class="text-xl mb-4">Create New Backend</h2>
+            <form id="create-backend-form">
+                <div class="mb-4">
+                    <label for="backend-name" class="block text-sm mb-2">Name</label>
+                    <input type="text" id="backend-name" name="name" placeholder="Backend Name"
+                        class="w-full bg-neutral-800 rounded px-4 py-2 outline-none">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-create-backend"
+                        class="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded">Cancel</button>
+                    <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    
+    <div id="tunnels-view" class="container mx-auto p-8 hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div class="flex items-center mb-12">
+                <i class="fa-solid fa-plane text-yellow-600 text-4xl mr-4"></i>
+                <h1 class="text-2xl">TCP Tunnel with a web ui</h1>
+            </div>
+            <button id="logout-btn" class="text-gray-400 hover:text-gray-200">Sign out</button>
+        </div>
+
+        <div class="bg-neutral-700 rounded-lg shadow-lg">
+            <div class="p-4 border-b border-neutral-500">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-1">
+                        <button id="back-to-main" class="text-gray-400 hover:text-gray-200 mr-2">
+                            <i class="fa-solid fa-arrow-left"></i>
+                        </button>
+                        <h2 id="tunnels-view-title" class="text-xl">Tunnels for <span id="backend-name"></span></h2>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button class="flex items-center text-gray-300 hover:text-white" id="new-tunnel-btn">
+                            <svg class="w-5 h-5 mr-1" viewBox="0 0 24 24">
+                                <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                            </svg>
+                            New tunnel
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="tunnels-list" class="p-4 space-y-4">
+                
+            </div>
+        </div>
+    </div>
+
+    
+    <div id="create-tunnel-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-neutral-700 rounded-lg p-6 w-96">
+            <h2 class="text-xl mb-4">Create New Tunnel</h2>
+            <form id="create-tunnel-form">
+                <div class="mb-4">
+                    <label for="tunnel-name" class="block text-sm mb-2">Tunnel Name</label>
+                    <input type="text" id="tunnel-name" name="name" placeholder="Tunnel Name"
+                        class="w-full bg-neutral-800 rounded px-4 py-2 outline-none">
+                </div>
+                <div class="mb-4">
+                    <label for="tunnel-localport" class="block text-sm mb-2">Local Port</label>
+                    <input type="number" id="tunnel-localport" name="localport" placeholder="Local Port"
+                        class="w-full bg-neutral-800 rounded px-4 py-2 outline-none">
+                </div>
+                <div class="mb-4">
+                    <label for="tunnel-serverport" class="block text-sm mb-2">Server Port</label>
+                    <input type="number" id="tunnel-serverport" name="serverport" placeholder="Server Port"
+                        class="w-full bg-neutral-800 rounded px-4 py-2 outline-none">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-tunnel"
+                        class="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded">Cancel</button>
+                    <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="backend-created-modal"
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-neutral-700 rounded-lg p-6 w-[600px] max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold">Connect Your Backend</h2>
+                <button id="close-backend-created" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <div class="space-y-6">
+                
+                <div class="bg-neutral-800 p-4 rounded-lg">
+                    <label class="block text-sm text-gray-400 mb-2">API Key</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="api-key-display"
+                            class="flex-grow bg-neutral-900 rounded px-4 py-2 text-sm font-mono" readonly>
+                        <button id="copy-api-key"
+                            class="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded flex items-center space-x-2">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>Copy</span>
+                        </button>
+                    </div>
+                </div>
+
+                
+                <div class="space-y-4">
+                    <h3 class="text-lg font-medium">Installation Instructions</h3>
+                    <div class="space-y-4 text-gray-300">
+                        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut
+                            labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                            laboris.</p>
+
+                        <div class="bg-neutral-800 p-4 rounded-lg font-mono text-sm">
+                            <p>curl http://ascii.live/can-you-hear-me</p>
+                            <p>bun client.ts YOUR_API_KEY</p>
+                        </div>
+
+                        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+                            pariatur. Excepteur sint occaecat cupidatat non proident.</p>
+
+                        <div class="bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 p-4 rounded-lg">
+                            <div class="flex items-start space-x-2">
+                                <i class="fa-solid fa-triangle-exclamation mt-1"></i>
+                                <div>
+                                    <p class="font-medium">Important Security Notice</p>
+                                    <p class="text-sm mt-1">Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                                        laboris nisi ut aliquip ex ea commodo consequat.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button id="done-backend-created" class="bg-yellow-600 hover:bg-yellow-500 px-6 py-2 rounded">
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+    <div id="edit-backend-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-neutral-700 rounded-lg p-6 w-[600px] max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold">Edit Backend Connection</h2>
+                <button id="cancel-edit-backend" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <form id="edit-backend-form" class="space-y-6">
+                
+                <div>
+                    <label for="edit-backend-name" class="block text-sm text-gray-400 mb-2">Backend Name</label>
+                    <input type="text" id="edit-backend-name" name="name"
+                        class="w-full bg-neutral-800 rounded px-4 py-2 outline-none" placeholder="Backend Name">
+                </div>
+
+                
+                <div class="bg-neutral-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm text-gray-400">API Key</label>
+                        <button type="button" id="regenerate-api-key"
+                            class="text-sm text-red-400 hover:text-red-300 flex items-center space-x-2">
+                            <i class="fa-solid fa-rotate"></i>
+                            <span>Regenerate key</span>
+                        </button>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="edit-api-key-display"
+                            class="flex-grow bg-neutral-900 rounded px-4 py-2 text-sm font-mono" readonly>
+                        <button type="button" id="copy-edit-api-key"
+                            class="bg-neutral-600 hover:bg-neutral-500 px-4 py-2 rounded flex items-center space-x-2">
+                            <i class="fa-regular fa-copy"></i>
+                            <span>Copy</span>
+                        </button>
+                    </div>
+                </div>
+
+                
+                <div class="space-y-4">
+                    <h3 class="text-lg font-medium">Installation Instructions</h3>
+                    <div class="space-y-4 text-gray-300">
+                        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut
+                            labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                            laboris.</p>
+
+                        <div class="bg-neutral-800 p-4 rounded-lg font-mono text-sm">
+                            <p>curl http://ascii.live/can-you-hear-me</p>
+                            <p>bun client.ts YOUR_API_KEY</p>
+                        </div>
+
+                        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla
+                            pariatur. Excepteur sint occaecat cupidatat non proident.</p>
+
+                        <div class="bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 p-4 rounded-lg">
+                            <div class="flex items-start space-x-2">
+                                <i class="fa-solid fa-triangle-exclamation mt-1"></i>
+                                <div>
+                                    <p class="font-medium">Important Security Notice</p>
+                                    <p class="text-sm mt-1">Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                                        laboris nisi ut aliquip ex ea commodo consequat.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-4">
+                    <button type="submit" class="bg-yellow-600 hover:bg-yellow-500 px-6 py-2 rounded">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        const API_URL = 'http://localhost:3000';
+
+        const loginView = document.getElementById('login-view');
+        const mainView = document.getElementById('main-view');
+        const tunnelsView = document.getElementById('tunnels-view');
+        const loginButton = document.querySelector('#login-view button');
+        const logoutButton = document.getElementById('logout-btn');
+        const passwordInput = document.querySelector('#login-view input');
+        const backToMainButton = document.getElementById('back-to-main');
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type} bg-neutral-700`;
+            toast.innerHTML = `
+            <span>${message}</span>
+            <button onclick="this.parentElement.remove()" class="ml-4 text-gray-400 hover:text-white">
+                <i class="fa-solid fa-times"></i>
+            </button>
+        `;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        
+        loginButton.addEventListener('click', async () => {
+            const password = passwordInput.value;
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ password }),
+                });
+                if (response.ok) {
+                    const { token } = await response.json();
+                    localStorage.setItem('authToken', token);
+                    loginView.classList.add('hidden');
+                    mainView.classList.remove('hidden');
+                    loadBackends();
+                    showToast('Successfully logged in');
+                } else {
+                    showToast('Invalid password', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server', 'error');
+            }
+        });
+
+        
+        window.addEventListener('load', () => {
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                loginView.classList.add('hidden');
+                mainView.classList.remove('hidden');
+                loadBackends();
+            }
+        });
+
+        
+        logoutButton.addEventListener('click', () => {
+            localStorage.removeItem('authToken'); 
+            mainView.classList.add('hidden');
+            tunnelsView.classList.add('hidden');
+            loginView.classList.remove('hidden');
+        });
+
+        
+        backToMainButton.addEventListener('click', () => {
+            tunnelsView.classList.add('hidden');
+            mainView.classList.remove('hidden');
+        });
+
+        
+        async function loadBackends() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                showToast('Not authenticated', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/backends`, {
+                    headers: {
+                        'Authorization': token,
+                    },
+                });
+                if (response.ok) {
+                    const backends = await response.json();
+                    renderBackends(backends);
+                } else {
+                    showToast('Failed to load backends', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server', 'error');
+            }
+        }
+
+
+        
+        document.getElementById('edit-backend-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const apiKeyDisplay = document.getElementById('edit-api-key-display');
+            const backendId = apiKeyDisplay.dataset.backendId;
+            const token = localStorage.getItem('authToken');
+            const formData = new FormData(e.target);
+            const name = formData.get('name');
+
+            try {
+                const response = await fetch(`${API_URL}/backends/${backendId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token,
+                    },
+                    body: JSON.stringify({
+                        name,
+                        apiKey: apiKeyDisplay.value
+                    }),
+                });
+
+                if (response.ok) {
+                    document.getElementById('edit-backend-modal').classList.add('hidden');
+                    loadBackends();
+                    showToast('Backend updated successfully');
+                } else {
+                    showToast('Failed to update backend', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server', 'error');
+            }
+        });
+        document.getElementById('cancel-edit-backend').addEventListener('click', () => {
+            document.getElementById('edit-backend-modal').classList.add('hidden');
+        });
+
+        
+        function renderBackends(backends) {
+            const backendsContainer = document.querySelector('#main-view .space-y-4');
+            backendsContainer.innerHTML = '';
+            backends.forEach(backend => {
+                const backendElement = document.createElement('div');
+                backendElement.className = 'bg-neutral-600 p-5 rounded-xl cursor-pointer hover:bg-neutral-500 transition';
+                backendElement.dataset.id = backend.id; 
+                backendElement.innerHTML = `
+            <div class="flex items-center justify-between py-3">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center mr-4">
+                        <span class="text-sm">${backend.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center">
+                            <span class="font-medium">${backend.name}</span>
+                            <span class="ml-2 text-sm text-gray-400">${backend.ip}</span>
+                        </div>
+                        <span class="text-sm text-gray-400">Up since ${backend.uptime}</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="text-right justify-between flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-simple"></i>
+                        <div>${backend.requestCount} requests</div>
+                    </div>
+                    <div class="text-right justify-between flex items-center space-x-2">
+                        <i class="fa-solid fa-globe"></i>
+                        <div>${backend.tunnels.length} tunnels</div>
+                    </div>
+                    <div class="toggle-switch ${backend.status ? 'active' : ''}" data-id="${backend.id}"></div>
+                    <button class="text-gray-400 hover:text-white edit-backend" data-id="${backend.id}">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button class="text-gray-400 hover:text-white delete-backend" data-id="${backend.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+
+                
+                backendElement.addEventListener('click', async (e) => {
+                    if (!e.target.classList.contains('toggle-switch') && !e.target.closest('button')) {
+                        const backendId = backendElement.dataset.id;
+                        const token = localStorage.getItem('authToken');
+                        const response = await fetch(`${API_URL}/backends/${backendId}/tunnels`, {
+                            headers: {
+                                'Authorization': token,
+                            },
+                        });
+                        if (response.ok) {
+                            const tunnels = await response.json();
+                            const backendName = backendElement.querySelector('.font-medium').textContent;
+                            openTunnelsView(backendId, backendName, tunnels);
+                        } else {
+                            showToast('Failed to load tunnels', 'error');
+                        }
+                    }
+                });
+
+                backendsContainer.appendChild(backendElement);
+            });
+
+            
+            document.querySelectorAll('.delete-backend').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    e.stopPropagation(); 
+                    const backendId = button.dataset.id;
+                    const token = localStorage.getItem('authToken');
+                    const response = await fetch(`${API_URL}/backends/${backendId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': token,
+                        },
+                    });
+                    if (response.ok) {
+                        loadBackends(); 
+                    } else {
+                        showToast('Failed to delete backend', 'error');
+                    }
+                });
+            });
+
+            
+            document.querySelectorAll('.toggle-switch').forEach(toggle => {
+                toggle.addEventListener('click', async (e) => {
+                    e.stopPropagation(); 
+                    const backendId = toggle.dataset.id;
+                    const token = localStorage.getItem('authToken');
+                    const response = await fetch(`${API_URL}/backends/${backendId}/toggle`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': token,
+                        },
+                    });
+                    if (response.ok) {
+                        toggle.classList.toggle('active');
+                    }
+                });
+            });
+
+            
+            document.querySelectorAll('.edit-backend').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const backendId = button.dataset.id;
+                    const token = localStorage.getItem('authToken');
+
+                    try {
+                        const response = await fetch(`${API_URL}/backends/${backendId}`, {
+                            headers: {
+                                'Authorization': token,
+                            },
+                        });
+
+                        if (response.ok) {
+                            const backend = await response.json();
+                            const editBackendName = document.getElementById('edit-backend-name');
+                            const editApiKeyDisplay = document.getElementById('edit-api-key-display');
+
+                            editBackendName.value = backend.name;
+                            editApiKeyDisplay.value = backend.apiKey;
+                            editApiKeyDisplay.dataset.backendId = backendId;
+
+                            document.getElementById('edit-backend-modal').classList.remove('hidden');
+                        } else {
+                            showToast('Failed to load backend details', 'error');
+                        }
+                    } catch (error) {
+                        showToast('Failed to connect to server', 'error');
+                    }
+                });
+            });
+        }
+
+        
+        document.getElementById('regenerate-api-key').addEventListener('click', async () => {
+            const apiKeyDisplay = document.getElementById('edit-api-key-display');
+            const backendId = apiKeyDisplay.dataset.backendId;
+            const token = localStorage.getItem('authToken');
+
+            try {
+                const response = await fetch(`${API_URL}/backends/${backendId}/regenerate-key`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': token,
+                    },
+                });
+
+                if (response.ok) {
+                    const { apiKey } = await response.json();
+                    apiKeyDisplay.value = apiKey;
+                    showToast('API key regenerated successfully');
+                } else {
+                    showToast('Failed to regenerate API key', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server', 'error');
+            }
+        });
+
+        document.getElementById('copy-edit-api-key').addEventListener('click', async () => {
+            const apiKeyDisplay = document.getElementById('edit-api-key-display');
+            try {
+                await navigator.clipboard.writeText(apiKeyDisplay.value);
+                showToast('API key copied to clipboard');
+            } catch (err) {
+                showToast('Failed to copy API key', 'error');
+            }
+        });
+
+        
+        function openTunnelsView(backendId, backendName, tunnels) {
+            const tunnelsViewTitle = document.getElementById('tunnels-view-title');
+            const tunnelsList = document.getElementById('tunnels-list');
+            const newTunnelButton = document.getElementById('new-tunnel-btn');
+            const createTunnelModal = document.getElementById('create-tunnel-modal');
+            const createTunnelForm = document.getElementById('create-tunnel-form');
+
+            
+            tunnelsViewTitle.textContent = `Tunnels for ${backendName}`;
+
+            
+            tunnelsList.innerHTML = '';
+            tunnels.forEach(tunnel => {
+                const tunnelElement = document.createElement('div');
+                tunnelElement.className = 'bg-neutral-600 p-4 rounded-lg flex items-center justify-between';
+                tunnelElement.innerHTML = `
+                <div>
+                    <span class="font-medium">${tunnel.name}</span>
+                    <span class="text-sm text-gray-400 ml-2">Port: ${tunnel.localport}:${tunnel.serverport}</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="toggle-switch ${tunnel.status ? 'active' : ''}" data-id="${tunnel.id}"></div>
+                    <button class="text-gray-400 hover:text-white delete-tunnel" data-id="${tunnel.id}">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            `;
+
+                
+                const toggleSwitch = tunnelElement.querySelector('.toggle-switch');
+                toggleSwitch.addEventListener('click',
+                    handleTunnelToggle(backendId, tunnel.id, toggleSwitch)
+                );
+
+                tunnelsList.appendChild(tunnelElement);
+            });
+
+            
+            mainView.classList.add('hidden');
+            tunnelsView.classList.remove('hidden');
+
+            
+            newTunnelButton.addEventListener('click', () => {
+                createTunnelModal.classList.remove('hidden');
+            });
+
+            
+            createTunnelForm.onsubmit = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(createTunnelForm);
+                const { name, localport, serverport } = Object.fromEntries(formData.entries());
+
+                if (!name || !localport || !serverport) {
+                    showToast('Please fill out all fields', 'error');
+                    return;
+                }
+
+                const response = await fetch(`${API_URL}/backends/${backendId}/tunnels`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': localStorage.getItem('authToken'),
+                    },
+                    body: JSON.stringify({ name, localport, serverport }),
+                });
+
+                if (response.ok) {
+                    const newTunnel = await response.json();
+                    tunnels.push(newTunnel);
+                    openTunnelsView(backendId, backendName, tunnels); 
+                    createTunnelForm.reset();
+                    createTunnelModal.classList.add('hidden');
+                } else {
+                    showToast('Failed to create tunnel', 'error');
+                }
+            };
+
+            
+            document.querySelectorAll('.delete-tunnel').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const tunnelId = button.dataset.id;
+                    try {
+                        const response = await fetch(`${API_URL}/backends/${backendId}/tunnels/${tunnelId}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': localStorage.getItem('authToken'),
+                            },
+                        });
+
+                        if (response.ok) {
+                            tunnels = tunnels.filter(t => t.id !== tunnelId);
+                            openTunnelsView(backendId, backendName, tunnels);
+                            showToast('Tunnel deleted successfully');
+                        } else {
+                            showToast('Failed to delete tunnel', 'error');
+                        }
+                    } catch (error) {
+                        showToast('Failed to connect to server', 'error');
+                    }
+                });
+            });
+
+            
+            document.getElementById('cancel-tunnel').addEventListener('click', () => {
+                createTunnelModal.classList.add('hidden');
+            });
+        }
+
+        
+        function handleTunnelToggle(backendId, tunnelId, toggleElement) {
+            return async (e) => {
+                e.stopPropagation();
+                const token = localStorage.getItem('authToken');
+                try {
+                    const response = await fetch(`${API_URL}/backends/${backendId}/tunnels/${tunnelId}/toggle`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': token,
+                        },
+                    });
+                    if (response.ok) {
+                        const tunnel = await response.json();
+                        toggleElement.classList.toggle('active', tunnel.status);
+                        showToast(`Tunnel ${tunnel.status ? 'enabled' : 'disabled'}`);
+                    } else {
+                        showToast('Failed to toggle tunnel', 'error');
+                    }
+                } catch (error) {
+                    showToast('Failed to connect to server', 'error');
+                }
+            };
+        }
+
+        
+        const createBackendModal = document.getElementById('create-backend-modal');
+        const createBackendForm = document.getElementById('create-backend-form');
+        const cancelCreateBackendButton = document.getElementById('cancel-create-backend');
+        const newBackendButton = document.getElementById('new-backend-btn');
+
+        newBackendButton.addEventListener('click', () => {
+            createBackendModal.classList.remove('hidden');
+        });
+
+        cancelCreateBackendButton.addEventListener('click', () => {
+            createBackendModal.classList.add('hidden');
+        });
+
+        createBackendForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = localStorage.getItem('authToken');
+            const formData = new FormData(createBackendForm);
+            const name = formData.get('name');
+
+            if (!name) {
+                showToast('Please fill out all fields', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/backends`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token,
+                    },
+                    body: JSON.stringify({ name }),
+                });
+
+                if (response.ok) {
+                    const newBackend = await response.json();
+                    loadBackends(); 
+                    createBackendModal.classList.add('hidden'); 
+                    createBackendForm.reset(); 
+
+                    
+                    const backendCreatedModal = document.getElementById('backend-created-modal');
+                    const apiKeyDisplay = document.getElementById('api-key-display');
+                    apiKeyDisplay.value = newBackend.apiKey || 'api-key-' + Math.random().toString(36).substr(2, 9);
+                    backendCreatedModal.classList.remove('hidden');
+
+                    showToast('Backend created successfully');
+                } else {
+                    showToast('Failed to create backend', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to connect to server', 'error');
+            }
+        });
+
+        
+        document.getElementById('copy-api-key').addEventListener('click', async () => {
+            const apiKeyDisplay = document.getElementById('api-key-display');
+            try {
+                await navigator.clipboard.writeText(apiKeyDisplay.value);
+                showToast('API key copied to clipboard');
+            } catch (err) {
+                showToast('Failed to copy API key', 'error');
+            }
+        });
+
+        
+        document.getElementById('close-backend-created').addEventListener('click', () => {
+            document.getElementById('backend-created-modal').classList.add('hidden');
+        });
+
+        
+        document.getElementById('done-backend-created').addEventListener('click', () => {
+            document.getElementById('backend-created-modal').classList.add('hidden');
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "bifrost-server",
+  "module": "main.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "fs": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
+    "net": "^1.0.2",
+    "path": "^0.12.7",
+    "url": "^0.11.4",
+    "winston": "^3.17.0"
+  }
+}

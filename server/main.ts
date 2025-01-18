@@ -9,6 +9,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import winston from 'winston';
 
+import TunnelManager from './tunnel-server';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -83,8 +85,7 @@ interface Backend {
 
 
 const backendConnections: Map<string, net.Socket> = new Map();
-const tcpServers: Map<string, net.Server> = new Map();
-const pendingRequests: Map<string, { socket: net.Socket, timeout: NodeJS.Timeout }> = new Map();
+const tunnelManager = new TunnelManager();
 
 let backends: Backend[] = [];
 
@@ -123,44 +124,42 @@ setInterval(() => {
 
 const backendServer = net.createServer((socket) => {
     let backendId: string | null = null;
-
+    
     socket.on('data', (data) => {
         try {
-            const message = JSON.parse(data.toString());
-            if (message.type === 'register') {
-
-                const backend = backends.find(b => b.apiKey === message.apiKey);
-                if (backend) {
-                    backendId = backend.id;
-                    backend.ip = socket.remoteAddress || '';
-                    backend.lastSeen = new Date().toISOString();
-                    backend.status = true;
-                    backend.uptime = 100;
-                    backendConnections.set(backend.id, socket);
-                    logger.info('Backend connected', { backendId, ip: backend.ip });
-                    socket.write(JSON.stringify({ type: 'registered', name: backend.name }) + '\n');
-                    saveBackends();
-                } else {
-                    logger.warn('Invalid backend registration attempt', { apiKey: message.apiKey });
-                    socket.write(JSON.stringify({ type: 'unauthorized' }) + '\n');
-                    socket.end();
-                }
-            } else if (message.type === 'response') {
-
-                const pending = pendingRequests.get(message.requestId);
-                if (pending) {
-
-                    pending.socket.write(Buffer.from(message.data, 'base64'));
-                    clearTimeout(pending.timeout);
-
+            const messages = data.toString().split('\n');
+            for (const msg of messages) {
+                if (!msg) continue;
+                
+                const message = JSON.parse(msg);
+                if (message.type === 'register') {
+                    const backend = backends.find(b => b.apiKey === message.apiKey);
+                    if (backend) {
+                        backendId = backend.id;
+                        backend.ip = socket.remoteAddress || '';
+                        backend.lastSeen = new Date().toISOString();
+                        backend.status = true;
+                        backend.uptime = 1;
+                        backendConnections.set(backend.id, socket);
+                                                
+                        tunnelManager.handleBackendConnection(socket, backend.id);
+                        
+                        logger.info('Backend connected', { backendId, ip: backend.ip });
+                        saveBackends();
+                    } else {
+                        logger.warn('Invalid backend registration attempt', { apiKey: message.apiKey });
+                        socket.write(JSON.stringify({ type: 'unauthorized' }) + '\n');
+                        socket.end();
+                    }
                 }
             }
         } catch (error) {
+            logger.error('Error processing backend message', { error: (error as Error).message });
         }
     });
 
     socket.on('error', (error) => {
-        logger.error('Backend socket error', { error, backendId });
+        logger.error('Backend socket error', { error: error.message, backendId });
     });
 
     socket.on('close', () => {
@@ -185,241 +184,55 @@ app.listen(port, () => {
     logger.info(`HTTP server listening on port ${port}`);
 });
 
-function createTunnelServer(backend: Backend, tunnel: Backend['tunnels'][0]): Promise<void> {
-    return new Promise((resolve, reject) => {
-        const serverKey = `${backend.id}-${tunnel.id}`;
-        if (tcpServers.has(serverKey)) {
-            resolve();
-            return;
-        }
+async function createTunnelServer(backend: Backend, tunnel: Backend['tunnels'][0]): Promise<void> {
+    const serverKey = `${backend.id}-${tunnel.id}`;
 
-        const server = net.createServer((clientSocket) => {
-            let requestId = crypto.randomBytes(16).toString('hex');
-            let pendingDataBuffers: Buffer[] = [];
-            let isConnected = false;
-
-            logger.info('New client connection', {
-                backendId: backend.id,
-                tunnelId: tunnel.id,
-                requestId,
-                serverPort: tunnel.serverport,
-                targetIp: tunnel.targetIp,
-                localPort: tunnel.localport
-            });
-
-            const backendConnection = backendConnections.get(backend.id);
-            if (!backendConnection) {
-                logger.error('Backend not connected', { requestId });
-                clientSocket.end();
-                return;
-            }
-
-
-            const cleanup = () => {
-                if (pendingRequests.has(requestId)) {
-                    const { timeout } = pendingRequests.get(requestId);
-                    clearTimeout(timeout);
-                    pendingRequests.delete(requestId);
-                }
-                pendingDataBuffers = [];
-            };
-
-            const retryConnection = (attempt = 1, maxAttempts = 3) => {
-                if (attempt > maxAttempts) {
-                    logger.error('Max retry attempts reached', { requestId });
-                    clientSocket.destroy();
-                    cleanup();
-                    return;
-                }
-
-                const request = {
-                    type: 'request',
-                    requestId,
-                    tunnelId: tunnel.id,
-                    localPort: tunnel.localport,
-                    targetIp: tunnel.targetIp,
-                    attempt
-                };
-
-                logger.info('Attempting connection', { requestId, attempt });
-                backendConnection.write(JSON.stringify(request) + '\n');
-
-
-                const timeout = setTimeout(() => {
-                    if (!isConnected) {
-                        logger.warn('Connection attempt timed out', { requestId, attempt });
-                        retryConnection(attempt + 1);
-                    }
-                }, 5000); // 5 second timeout per attempt
-
-                pendingRequests.set(requestId, {
-                    socket: clientSocket,
-                    timeout,
-                    retryAttempt: attempt
-                });
-            };
-
-
-            retryConnection();
-
-
-            clientSocket.on('data', (data) => {
-                if (!isConnected) {
-                    pendingDataBuffers.push(data);
-                    return;
-                }
-
-                const message = {
-                    type: 'data',
-                    requestId,
-                    data: data.toString('base64')
-                };
-                backendConnection.write(JSON.stringify(message) + '\n');
-            });
-
-
-            const messageHandler = (data: Buffer) => {
-                try {
-                    const messages = data.toString().split('\n');
-                    for (const msg of messages) {
-                        if (!msg) continue;
-
-                        const response = JSON.parse(msg);
-                        if (response.requestId !== requestId) continue;
-
-                        switch (response.type) {
-                            case 'connect':
-                                isConnected = true;
-
-                                while (pendingDataBuffers.length > 0) {
-                                    const bufferedData = pendingDataBuffers.shift();
-                                    if (bufferedData) {
-                                        const message = {
-                                            type: 'data',
-                                            requestId,
-                                            data: bufferedData.toString('base64')
-                                        };
-                                        backendConnection.write(JSON.stringify(message) + '\n');
-                                    }
-                                }
-                                break;
-                            case 'data':
-                                if (clientSocket.writable) {
-                                    try {
-                                        const responseData = Buffer.from(response.data, 'base64');
-                                        clientSocket.write(responseData);
-                                    } catch (error) {
-                                        logger.error('Error writing response to client', {
-                                            error,
-                                            requestId
-                                        });
-                                    }
-                                }
-                                break;
-                            case 'error':
-                                logger.error('Backend reported error', {
-                                    requestId,
-                                    error: response.error
-                                });
-                                cleanup();
-                                clientSocket.destroy();
-                                break;
-                            case 'end':
-                                cleanup();
-                                clientSocket.end();
-                                break;
-                        }
-                    }
-                } catch (error) {
-                    if(error) logger.error('Error processing backend message', { error });
-                }
-            };
-
-            backendConnection.on('data', messageHandler);
-
-            clientSocket.on('error', (error) => {
-                logger.error('Client socket error', {
-                    error: error.message,
-                    requestId
-                });
-                cleanup();
-            });
-
-            clientSocket.on('end', () => {
-                const message = {
-                    type: 'end',
-                    requestId
-                };
-                backendConnection.write(JSON.stringify(message) + '\n');
-                cleanup();
-                backendConnection.removeListener('data', messageHandler);
-            });
-
-            clientSocket.on('close', () => {
-                cleanup();
-                backendConnection.removeListener('data', messageHandler);
-            });
+    try {
+        await tunnelManager.createTunnel({
+            backendId: backend.id,
+            tunnelId: tunnel.id,
+            serverPort: tunnel.serverport,
+            localPort: tunnel.localport,
+            targetIp: tunnel.targetIp
         });
-
-        server.listen(parseInt(tunnel.serverport.toString()), '0.0.0.0', () => {
-            logger.info('Tunnel server started', {
-                port: tunnel.serverport,
-                target: `${tunnel.targetIp}:${tunnel.localport}`
-            });
-            tcpServers.set(serverKey, server);
-            resolve();
+        logger.info('Tunnel server created', {
+            backendId: backend.id,
+            tunnelId: tunnel.id,
+            serverPort: tunnel.serverport
         });
-
-        server.on('error', (err) => {
-            logger.error('Tunnel server error', { error: err.message });
-            tcpServers.delete(serverKey);
-
-            if (tunnel) {
-                tunnel.status = false;
-                saveBackends();
-            }
-            reject(err);
+    } catch (error) {
+        logger.error('Failed to create tunnel server', {
+            error: (error as Error).message,
+            backendId: backend.id,
+            tunnelId: tunnel.id
         });
-    });
+        throw error;
+    }
 }
 
 function stopTunnelServer(backendId: string, tunnelId: string) {
-    const server = tcpServers.get(`${backendId}-${tunnelId}`);
-    if (server) {
-        server.close();
-        tcpServers.delete(`${backendId}-${tunnelId}`);
-        logger.info('Stopped TCP server', {
-            backendId,
-            tunnelId
-        });
-    }
+    tunnelManager.removeTunnel(backendId, tunnelId);
 }
 
 
 function updateTunnelServers(backends: Backend[]) {
-
-    const activeTunnels = new Set<string>();
-
-
     backends.forEach(backend => {
         if (backend.status) {
             backend.tunnels.forEach(tunnel => {
                 if (tunnel.status) {
-                    const tunnelKey = `${backend.id}-${tunnel.id}`;
-                    activeTunnels.add(tunnelKey);
-                    createTunnelServer(backend, tunnel);
+                    createTunnelServer(backend, tunnel).catch(error => {
+                        logger.error('Failed to update tunnel server', {
+                            error: error.message,
+                            backendId: backend.id,
+                            tunnelId: tunnel.id
+                        });
+                    });
+                } else {
+                    stopTunnelServer(backend.id, tunnel.id);
                 }
             });
         }
     });
-
-
-    for (const [key] of tcpServers) {
-        if (!activeTunnels.has(key)) {
-            const [backendId, tunnelId] = key.split('-');
-            stopTunnelServer(backendId, tunnelId);
-        }
-    }
 }
 
 const authenticate = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -473,7 +286,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 app.post('/login', (req, res) => {
     const { password } = req.body;
     // ✨ Bruteforce protection ✨ (it's not perfect but it's something)
-    if(passwordattempts.has(req.ip) && passwordattempts.get(req.ip) >= 3) {
+    if (passwordattempts.has(req.ip) && passwordattempts.get(req.ip) >= 3) {
         logger.warn('Too many login attempts', { ip: req.ip });
         return res.status(429).json({ error: 'Too many attempts' });
     }
@@ -586,41 +399,16 @@ app.get('/check-port/:port', authenticate, (req, res) => {
         });
     }
 
-    const portInUse = backends.some(backend =>
-        backend.tunnels.some(tunnel =>
-            tunnel.serverport === port && tunnel.status
-        )
-    );
-
-    res.json({ available: !portInUse });
+    res.json({ available: tunnelManager.isPortAvailable(port) });
 });
 
 app.get('/random-port', authenticate, (req, res) => {
-    const MIN_PORT = 5000;
-    const MAX_PORT = 65535;
-    const ATTEMPTS = 75;
-
-    function isPortAvailable(port: number): boolean {
-        return !backends.some(backend => 
-            backend.tunnels.some(tunnel => 
-                tunnel.serverport === port && tunnel.status
-            )
-        );
+    try {
+        const port = tunnelManager.findAvailablePort();
+        res.json({ port });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not find an available port' });
     }
-
-    let attempt = 0;
-    let port;
-    
-    do {
-        port = Math.floor(Math.random() * (MAX_PORT - MIN_PORT + 1)) + MIN_PORT;
-        attempt++;
-    } while (!isPortAvailable(port) && attempt < ATTEMPTS);
-
-    if (attempt >= ATTEMPTS) {
-        return res.status(500).json({ error: 'Could not find an available port' });
-    }
-
-    res.json({ port });
 });
 
 app.post('/backends/:id/tunnels', authenticate, async (req, res) => {
@@ -739,32 +527,15 @@ app.delete('/backends/:id', authenticate, (req, res) => {
     }
 });
 
-app.get('/debug/tunnels', (req, res) => {
-    const activeTunnels = Array.from(tcpServers.entries()).map(([key, server]) => {
-        const [backendId, tunnelId] = key.split('-');
-        const backend = backends.find(b => b.id === backendId);
-        const tunnel = backend?.tunnels.find(t => t.id === tunnelId);
-
-        return {
-            key,
-            backendId,
-            tunnelId,
-            tunnel,
-            isListening: server.listening,
-            address: server.address()
-        };
-    });
-
-    res.json({
-        activeTunnels,
-        activeBackendConnections: Array.from(backendConnections.keys()),
-        pendingRequests: Array.from(pendingRequests.keys()).length
-    });
+app.get('/debug/tunnels', authenticate, (req, res) => {
+    res.json(tunnelManager.getStatus());
 });
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'frontend/index.html'));
 });
+
+app.use(express.static(path.join(__dirname, 'frontend')));
 
 if (fs.existsSync(BACKENDS_FILE)) {
     updateTunnelServers(backends);

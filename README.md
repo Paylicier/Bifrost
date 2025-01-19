@@ -78,7 +78,7 @@ docker run -d --name bifrost-server \
   -e PASSWORD=your_secure_password \
   -e SECRET_KEY=your_jwt_secret_key \
   -v $(pwd)/backends.json:/app/backends.json \
-  Paylicier/bifrost-server
+  paylicier/bifrost-server
 ```
 
 ### Backend Client Setup
@@ -111,7 +111,7 @@ docker run -d --name bifrost-client \
   -e API_KEY=your_api_key \
   -e SERVER_HOST=your_server_host \
   -e SERVER_PORT=9041 \
-  Paylicier/bifrost-client
+  paylicier/bifrost-client
 ```
 
 ## API Documentation 📚

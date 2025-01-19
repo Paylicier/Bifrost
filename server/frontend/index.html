@@ -92,10 +92,9 @@
     <div id="toast-container" class="toast-container"></div>
 
     <div id="login-view" class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 max-w-sm">
-        <div class="flex justify-between items-center mb-6 sm:mb-8">
+        <div class="flex justify-center items-center w-full my-6 sm:my-8">
             <div class="flex items-center mb-6 sm:mb-12">
-                <i class="fa-solid fa-cloud text-blue-500 text-3xl sm:text-4xl mr-3 sm:mr-4"></i>
-                <h1 class="text-xl sm:text-2xl">Bifrost</h1>
+                <img src="logo.svg" alt="logo" class="w-96">
             </div>
         </div>
 
@@ -117,9 +116,8 @@
 
     <div id="main-view" class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 hidden">
         <div class="flex justify-between items-center mb-6 sm:mb-8">
-            <div class="flex items-center mb-6 sm:mb-12">
-                <i class="fa-solid fa-cloud text-blue-500 text-3xl sm:text-4xl mr-3 sm:mr-4"></i>
-                <h1 class="text-xl sm:text-2xl">Bifrost</h1>
+            <div class="flex items-center">
+                <img src="logo.svg" alt="logo" class="w-64">
             </div>
             <button id="logout-btn" class="text-gray-400 hover:text-gray-200">Sign out</button>
         </div>
@@ -167,9 +165,8 @@
 
     <div id="tunnels-view" class="container mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 hidden">
         <div class="flex justify-between items-center mb-6 sm:mb-8">
-            <div class="flex items-center mb-6 sm:mb-12">
-                <i class="fa-solid fa-cloud text-blue-500 text-3xl sm:text-4xl mr-3 sm:mr-4"></i>
-                <h1 class="text-xl sm:text-2xl">Bifrost</h1>
+            <div class="flex items-center">
+                <img src="logo.svg" alt="logo" class="w-64">
             </div>
             <button id="logout-btn" class="text-gray-400 hover:text-gray-200">Sign out</button>
         </div>
@@ -285,22 +282,12 @@
                         <p>To connect your backend to Bifrost, follow these simple steps:</p>
 
                         <div class="bg-neutral-800 p-4 rounded-lg font-mono text-sm">
-                            <p class="mb-2"># Download the latest client release for your os</p>
-                            <p># Linux</p>
-                            <p class="mb-2">wget https://git.new/bifrost-linux</p>
-                            <p># Windows</p>
-                            <p class="mb-4">wget https://git.new/bifrost-win.exe</p>
-
-                            <p class="mb-2"># Create a .env file with your configuration</p>
-                            <p>echo "API_KEY=YOUR_API_KEY" > .env</p>
-                            <p>echo "SERVER_HOST=YOUR_SERVER_ADDRESS" >> .env</p>
-                            <p class="mb-4">echo "SERVER_PORT=9041" >> .env</p>
-
-                            <p class="mb-2"># Run the client</p>
-                            <p># Linux</p>
-                            <p class="mb-2">./client-linux</p>
-                            <p># Windows</p>
-                            <p class="mb-2">client-win.exe</p>
+                            <p class="mb-2"># Create a Docker container for the Bifrost client</p>
+                            <p>docker run -d --name bifrost-client \</p>
+                            <p>  -e API_KEY=YOUR_API_KEY \</p>
+                            <p>  -e SERVER_HOST=YOUR_SERVER_ADDRESS \</p>
+                            <p>  -e SERVER_PORT=9041 \</p>
+                            <p>  Paylicier/bifrost-client</p>
                         </div>
                         <div class="text-sm text-gray-400">
                             <p>Once connected, you can create and manage tunnels through the web interface. The client
@@ -363,22 +350,12 @@
                         <p>To connect your backend to Bifrost, follow these simple steps:</p>
 
                         <div class="bg-neutral-800 p-4 rounded-lg font-mono text-sm">
-                            <p class="mb-2"># Download the latest client release for your os</p>
-                            <p># Linux</p>
-                            <p class="mb-2">wget https://git.new/bifrost-linux</p>
-                            <p># Windows</p>
-                            <p class="mb-4">wget https://git.new/bifrost-win.exe</p>
-
-                            <p class="mb-2"># Create a .env file with your configuration</p>
-                            <p>echo "API_KEY=YOUR_API_KEY" > .env</p>
-                            <p>echo "SERVER_HOST=YOUR_SERVER_ADDRESS" >> .env</p>
-                            <p class="mb-4">echo "SERVER_PORT=9041" >> .env</p>
-
-                            <p class="mb-2"># Run the client</p>
-                            <p># Linux</p>
-                            <p class="mb-2">./client-linux</p>
-                            <p># Windows</p>
-                            <p class="mb-2">client-win.exe</p>
+                            <p class="mb-2"># Create a Docker container for the Bifrost client</p>
+                            <p>docker run -d --name bifrost-client \</p>
+                            <p>  -e API_KEY=YOUR_API_KEY \</p>
+                            <p>  -e SERVER_HOST=YOUR_SERVER_ADDRESS \</p>
+                            <p>  -e SERVER_PORT=9041 \</p>
+                            <p>  Paylicier/bifrost-client</p>
                         </div>
                         <div class="text-sm text-gray-400">
                             <p>Once connected, you can create and manage tunnels through the web interface. The client
